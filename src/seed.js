@@ -1,34 +1,31 @@
 const path = require("path");
-const { getDb, initDb } = require("./db");
+const { getDb } = require("./db");
 const { uuidv7 } = require("./utils/uuid");
 
 const FILE_PATH = process.env.SEED_FILE || path.join(__dirname, "..", "profiles.json");
 
-async function seed() {
-  await initDb();
-  const db = getDb();
-
+async function runSeed() {
   let raw;
   try {
     raw = require(FILE_PATH);
   } catch {
-    console.error(`Could not load seed file at: ${FILE_PATH}`);
-    console.error("Make sure profiles.json is in the root of the project.");
-    process.exit(1);
+    console.log("No profiles.json found — skipping seed.");
+    return;
   }
 
   const profiles = raw.profiles || raw;
 
   if (!Array.isArray(profiles)) {
-    console.error("Seed file must contain an array of profiles.");
-    process.exit(1);
+    console.log("Seed file format invalid — skipping seed.");
+    return;
   }
+
+  const db = getDb();
 
   const insert = db.prepare(`
     INSERT OR IGNORE INTO profiles
       (id, name, gender, gender_probability, age, age_group, country_id, country_name, country_probability, created_at)
-    VALUES
-      (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const insertMany = db.transaction((items) => {
@@ -52,8 +49,12 @@ async function seed() {
   });
 
   const inserted = insertMany(profiles);
-  console.log(`Seeding complete. ${inserted} new profiles inserted, ${profiles.length - inserted} skipped (already exist).`);
-  process.exit(0);
+  console.log(`Seed: ${inserted} new profiles inserted, ${profiles.length - inserted} already existed.`);
 }
 
-seed();
+if (require.main === module) {
+  const { initDb } = require("./db");
+  initDb().then(runSeed).then(() => process.exit(0));
+}
+
+module.exports = { runSeed };
